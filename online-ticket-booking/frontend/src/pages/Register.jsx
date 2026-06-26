@@ -16,7 +16,7 @@ export default function Register() {
     
     try {
       // Backend API call
-      const response = await axios.post('http://localhost:5000/api/auth/register', formData);
+      const response = await axios.post('http://localhost:5000/api/auth/signup', formData);
       setSuccess('Registration Successful! Redirecting to login...');
       
       // 2 second baad login page par bhej dega
