@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FiMapPin, FiCalendar, FiSearch, FiUser, FiLogOut, FiClock } from 'react-icons/fi';
-import axios from 'axios';
+import api from '../api';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState({ from: '', to: '', date: '' });
@@ -9,12 +9,18 @@ export default function Home() {
   const [trains, setTrains] = useState([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
+  const [bookings, setBookings] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
+      api.get('/trains/bookings')
+        .then((response) => setBookings(response.data.bookings || []))
+        .catch((err) => console.error('Booking history error:', err));
     }
   }, []);
 
@@ -30,17 +36,16 @@ export default function Home() {
     e.preventDefault();
     setLoading(true);
     setSearched(true);
+    setError('');
     try {
-      // Vercel Compatible Production Path URL
-      const response = await axios.get(
-        `/api/trains/search?from=${searchQuery.from}&to=${searchQuery.to}`
-      );
+      const response = await api.get('/trains/search', { params: searchQuery });
       if (response.data.success) {
         setTrains(response.data.trains);
       }
     } catch (err) {
       console.error("Search Error:", err);
-      alert("Error fetching trains from server.");
+      setTrains([]);
+      setError(err.response?.data?.message || 'Error fetching trains from server.');
     } finally {
       setLoading(false);
     }
@@ -55,65 +60,19 @@ export default function Home() {
     }
 
     try {
-      // 1. Fetch initialization object from Vercel Serverless Function
-      const res = await axios.post('/api/trains/book', {
-        price: train.price
-      });
+      setError('');
+      const res = await api.post('/trains/book', train);
 
       if (res.data.success) {
-        const { order_id, amount, key_id, isSandbox } = res.data;
-
-        // 2. CHECK IF REAL RAZORPAY SCRIPT IS AVAILABLE & NOT SIMULATED
-        if (window.Razorpay && key_id && !key_id.includes("simulation_mode") && !isSandbox) {
-          const options = {
-            key: key_id,
-            amount: amount,
-            currency: "INR",
-            name: "BLW Ticket Booking",
-            description: `Ticket Booking for ${train.trainName}`,
-            order_id: order_id,
-            handler: function (response) {
-              alert(`🎉 Payment Successful!\nPayment ID: ${response.razorpay_payment_id}\nYour ticket is confirmed live on the railway matrix.`);
-              
-              // Visual Seat Deduction State Management
-              setTrains(prevTrains =>
-                prevTrains.map(t =>
-                  t._id === train._id ? { ...t, seatsAvailable: t.seatsAvailable - 1 } : t
-                )
-              );
-            },
-            prefill: {
-              name: user.name,
-              email: user.email,
-            },
-            theme: {
-              color: "#1e3a8a",
-            },
-          };
-
-          const rzp1 = new window.Razorpay(options);
-          rzp1.open();
-        } else {
-          // 3. PRODUCT LEVEL SECURE GATEWAY FALLBACK (When no merchant credentials present)
-          const confirmPayment = window.confirm(
-            `💳 BLW Secure Ticket Booking Gateway\n\nTrain: ${train.trainName}\nRoute: ${train.fromStation} ➔ ${train.toStation}\nAmount: ₹${train.price}\n\nProceed to authorize secure mock transaction and book seat?`
-          );
-          
-          if (confirmPayment) {
-            alert(`🎉 Live Booking Confirmed!\nOrder ID: ${order_id}\n\nYour seat has been successfully reserved in the central database system.`);
-            
-            // Visual Seat Deduction State Management
-            setTrains(prevTrains =>
-              prevTrains.map(t =>
-                t._id === train._id ? { ...t, seatsAvailable: t.seatsAvailable - 1 } : t
-              )
-            );
-          }
-        }
+        setConfirmation(res.data.booking);
+        setBookings(prevBookings => [res.data.booking, ...prevBookings]);
+        setTrains(prevTrains => prevTrains.map(t =>
+          t._id === train._id ? { ...t, seatsAvailable: Math.max(0, t.seatsAvailable - 1) } : t
+        ));
       }
     } catch (err) {
       console.error("Booking Gateway Error:", err);
-      alert("Error initializing payment gateway framework.");
+      setError(err.response?.data?.message || 'Unable to confirm this booking.');
     }
   };
 
@@ -130,6 +89,7 @@ export default function Home() {
             <Link to="/" className="hover:text-yellow-400 transition font-medium">Home</Link>
             {user ? (
               <div className="flex items-center space-x-4">
+                <a href="#bookings" className="text-sm font-semibold hover:text-yellow-400">My bookings</a>
                 <div className="flex items-center space-x-1.5 bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700">
                   <FiUser className="text-yellow-400" />
                   <span className="font-semibold text-sm max-w-[120px] truncate">{user.name}</span>
@@ -215,7 +175,16 @@ export default function Home() {
       {searched && (
         <section className="max-w-5xl mx-auto px-4 py-10">
           <h2 className="text-2xl font-bold text-gray-800 mb-6">Available Trains Matrix</h2>
+          {error && <div className="mb-4 rounded-lg bg-red-100 px-4 py-3 text-red-700">{error}</div>}
+          {confirmation && (
+            <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 p-5 text-green-900">
+              <h3 className="text-xl font-bold">Booking confirmed</h3>
+              <p className="mt-1">Order ID: <strong>{confirmation.orderId}</strong></p>
+              <p>{confirmation.trainName} · {confirmation.journeyDate} · ₹{confirmation.amount}</p>
+            </div>
+          )}
           <div className="space-y-4">
+            {!loading && trains.length === 0 && <p className="rounded-xl bg-white p-6 text-gray-600">No trains found for this route and date.</p>}
             {trains.map((train) => (
               <div key={train._id} className="bg-white border rounded-2xl shadow-md p-6 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
@@ -240,6 +209,27 @@ export default function Home() {
                   >
                     Book Now
                   </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {user && bookings.length > 0 && (
+        <section id="bookings" className="max-w-5xl mx-auto px-4 pb-12">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">My bookings</h2>
+          <div className="space-y-3">
+            {bookings.map((booking) => (
+              <div key={booking._id} className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row">
+                  <div>
+                    <p className="font-bold text-gray-900">{booking.trainName} ({booking.trainNumber})</p>
+                    <p className="text-sm text-gray-600">{booking.fromStation} → {booking.toStation} · {booking.journeyDate}</p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="font-bold text-green-700">Confirmed · ₹{booking.amount}</p>
+                    <p className="text-xs text-gray-500">{booking.orderId}</p>
+                  </div>
                 </div>
               </div>
             ))}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FiMail, FiLock } from 'react-icons/fi';
 import { Link, useNavigate } from 'react-router-dom'; // useNavigate add kiya
-import axios from 'axios'; // Axios import kiya
+import api from '../api';
 
 export default function Login() {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -16,7 +16,7 @@ export default function Login() {
 
     try {
       // Backend API ko data bhej rahe hain (Dhyan dein: Route /login hai, signup nahi)
-      const response = await axios.post('http://localhost:5000/api/auth/login', formData);
+      const response = await api.post('/auth/login', formData);
       
       if (response.data.success) {
         // Token ko browser ki local storage mein save karein taaki user logged in rahe

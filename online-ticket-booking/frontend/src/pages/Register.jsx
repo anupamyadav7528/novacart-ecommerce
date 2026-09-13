@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FiUser, FiMail, FiLock } from 'react-icons/fi';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 export default function Register() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -16,7 +16,7 @@ export default function Register() {
     
     try {
       // Backend API call
-      const response = await axios.post('http://localhost:5000/api/auth/signup', formData);
+      await api.post('/auth/signup', formData);
       setSuccess('Registration Successful! Redirecting to login...');
       
       // 2 second baad login page par bhej dega
