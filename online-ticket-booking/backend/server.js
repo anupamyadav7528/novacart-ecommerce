@@ -11,6 +11,10 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use((err, req, res, next) => {
+    console.error('Request Error:', err);
+    res.status(400).json({ message: 'Invalid request' });
+});
 
 // Routes Registered
 app.use('/api/auth', require('./routes/authRoutes'));
